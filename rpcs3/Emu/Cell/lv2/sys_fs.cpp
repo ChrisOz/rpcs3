@@ -52,7 +52,8 @@ void fmt_class_string<lv2_file>::format(std::string& out, u64 arg)
 		}
 
 		std::string size_str = fmt::format("0x%05x ", size);
-		switch (std::bit_width(size) / 10 * 10)
+#ifdef __APPLE__
+		switch (64 - __builtin_clzll(static_cast<u64>(size)) / 10 * 10)
 		{
 		case 64: size_str = "0"s; break;
 		case 0: fmt::append(size_str, "(%u)", size); break;
@@ -62,7 +63,19 @@ void fmt_class_string<lv2_file>::format(std::string& out, u64 arg)
 		default:
 		case 30: fmt::append(size_str, "(%gGB)", size / (1024. * 1024 * 1024)); break;
 		}
-	
+#else
+    		switch (std::bit_width(size) / 10 * 10)
+    		{
+    		case 64: size_str = "0"s; break;
+    		case 0: fmt::append(size_str, "(%u)", size); break;
+    		case 10: fmt::append(size_str, "(%gKB)", size / 1024.); break;
+    		case 20: fmt::append(size_str, "(%gMB)", size / (1024. * 1024)); break;
+
+    		default:
+    		case 30: fmt::append(size_str, "(%gGB)", size / (1024. * 1024 * 1024)); break;
+    		}
+#endif
+
 		return size_str;
 	};
 

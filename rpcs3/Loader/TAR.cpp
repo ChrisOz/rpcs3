@@ -289,8 +289,12 @@ std::vector<u8> tar_object::save_directory(const std::string& src_dir, std::vect
 			return;
 		}
 
-		ptr += utils::aligned_div(std::bit_width(i), 3) - 1;
-
+#ifdef __APPLE__
+		ptr += utils::aligned_div(static_cast<u64>(64 - __builtin_clzll(i)), 3) - 1;
+#else
+        ptr += utils::aligned_div(std::bit_width(i),3)-1;
+#endif
+        
 		for (; i; ptr--, i /= 8)
 		{
 			*ptr = static_cast<char>('0' + (i % 8));

@@ -11,6 +11,7 @@ include(ConfigureCompiler)
 include(CheckFunctionExists)
 
 set(CMAKE_CXX_STANDARD 20)
+add_compile_definitions(APPLE)
 
 set(ADDITIONAL_LIBS "")
 if(CMAKE_SYSTEM MATCHES "Linux")
