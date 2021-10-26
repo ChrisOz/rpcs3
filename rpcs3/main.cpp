@@ -125,7 +125,7 @@ LOG_CHANNEL(q_debug, "QDEBUG");
 	// Cocoa access is not allowed outside of the main thread
 	if (!pthread_main_np())
 	{
-		dispatch_sync(dispatch_get_main_queue(), ^ { show_report(text); });
+		dispatch_sync(dispatch_get_main_queue(), show_report(text));
 	}
 	else
 #endif
