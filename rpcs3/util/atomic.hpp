@@ -4,6 +4,10 @@
 #include <functional>
 #include <mutex>
 
+#ifdef __arm64__
+#include "intrinArm.h"
+#endif
+
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4996)
@@ -540,12 +544,14 @@ struct atomic_storage
 			dst = reinterpret_cast<T*>(ptr & -4);
 		}
 
-#ifdef _MSC_VER
+#if _MSC_VER
 		return _interlockedbittestandset((long*)dst, bit) != 0;
+#elif  defined(__arm64__)
+	    long PrevVal = __atomic_fetch_or(dst, 1l << bit, __ATOMIC_SEQ_CST);
+	    return (PrevVal >> bit) & 1;
 #else
-		bool result;
 		__asm__ volatile ("lock btsl %2, 0(%1)\n" : "=@ccc" (result) : "r" (dst), "Ir" (bit) : "cc", "memory");
-		return result;
+        return result;
 #endif
 	}
 
@@ -564,10 +570,13 @@ struct atomic_storage
 
 #ifdef _MSC_VER
 		return _interlockedbittestandreset((long*)dst, bit) != 0;
+#elif  defined(__arm64__)
+	    long PrevVal = __atomic_fetch_or(dst, 1l << bit, __ATOMIC_SEQ_CST);
+	    return (PrevVal >> bit) & 1;
 #else
-		bool result;
-		__asm__ volatile ("lock btrl %2, 0(%1)\n" : "=@ccc" (result) : "r" (dst), "Ir" (bit) : "cc", "memory");
-		return result;
+        bool result;
+        __asm__ volatile ("lock btsl %2, 0(%1)\n" : "=@ccc" (result) : "r" (dst), "Ir" (bit) : "cc", "memory");
+        return result;
 #endif
 	}
 
@@ -584,19 +593,30 @@ struct atomic_storage
 			dst = reinterpret_cast<T*>(ptr & -4);
 		}
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER)
 		while (true)
 		{
 			// Keep trying until we actually invert desired bit
-			if (!_bittest((long*)dst, bit) && !_interlockedbittestandset((long*)dst, bit))
+			if (!_bittest(reinterpret_cast<long*>(dst), bit) && !_interlockedbittestandset(reinterpret_cast<long*>(dst), bit))
 				return false;
-			if (_interlockedbittestandreset((long*)dst, bit))
+			if (_interlockedbittestandreset(reinterpret_cast<long*>(dst), bit))
 				return true;
 		}
+#elif defined(__arm64__)
+		while (true)
+		{
+			// Keep trying until we actually invert desired bit
+			if (!_bittest(reinterpret_cast<long*>(dst), bit) && !_interlockedbittestandset_rel(reinterpret_cast<long*>(dst), bit))
+				return false;
+			if (_interlockedbittestandset_rel(reinterpret_cast<long*>(dst), bit))
+				return true;
+		}
+		
 #else
-		bool result;
-		__asm__ volatile ("lock btcl %2, 0(%1)\n" : "=@ccc" (result) : "r" (dst), "Ir" (bit) : "cc", "memory");
-		return result;
+        bool result;
+
+        __asm__ volatile ("lock btsl %2, 0(%1)\n" : "=@ccc" (result) : "r" (dst), "Ir" (bit) : "cc", "memory");
+        return result;
 #endif
 	}
 };
@@ -999,7 +1019,9 @@ struct atomic_storage<T, 16> : atomic_storage<T, 0>
 	static inline T load(const T& dest)
 	{
 		alignas(16) T r;
-#ifdef __AVX__
+#ifdef __arm64__
+		std::memcpy(reinterpret_cast<char*>(&dest), r,16);
+#elif define(__AVX__)
 		__asm__ volatile("vmovdqa %1, %0;" : "=x" (r) : "m" (dest) : "memory");
 #else
 		__asm__ volatile("movdqa %1, %0;" : "=x" (r) : "m" (dest) : "memory");
@@ -1011,6 +1033,13 @@ struct atomic_storage<T, 16> : atomic_storage<T, 0>
 	{
 		return load(dest);
 	}
+
+#ifdef __arm64__
+	static inline bool compare_exchange(T& dest, T& comp, T exch)
+	{
+		return __atomic_compare_exchange(reinterpret_cast<__int128 *>(dest), reinterpret_cast<__int128 *>(comp), reinterpret_cast<__int128 *>(exch), false, __ATOMIC_SEQ_CST, __ATOMIC_ACQUIRE);
+	}
+#else
 
 	static inline bool compare_exchange(T& dest, T& comp, T exch)
 	{
@@ -1035,6 +1064,8 @@ struct atomic_storage<T, 16> : atomic_storage<T, 0>
 			std::memcpy(&exc_hi, reinterpret_cast<char*>(&exch) + 8, 8);
 		}
 
+		
+
 		__asm__ volatile("lock cmpxchg16b %1;"
 			: "=@ccz" (result)
 			, "+m" (dest)
@@ -1056,6 +1087,7 @@ struct atomic_storage<T, 16> : atomic_storage<T, 0>
 
 		return result;
 	}
+#endif
 
 	static inline T exchange(T& dest, T value)
 	{
@@ -1072,7 +1104,10 @@ struct atomic_storage<T, 16> : atomic_storage<T, 0>
 	static inline void release(T& dest, T value)
 	{
 		u128 val = std::bit_cast<u128>(value);
-#ifdef __AVX__
+
+#ifdef __arm64__
+		std::memcpy(reinterpret_cast<char*>(&dest), reinterpret_cast<char*>(val),16);
+#elif define(__AVX__)
 		__asm__ volatile("vmovdqa %0, %1;" :: "x" (val), "m" (dest) : "memory");
 #else
 		__asm__ volatile("movdqa %0, %1;" :: "x" (val), "m" (dest) : "memory");

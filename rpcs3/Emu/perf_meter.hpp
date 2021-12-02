@@ -15,9 +15,16 @@ inline u64 get_tsc()
 {
 	return __rdtsc();
 }
-#else
+#elif __arm64__
 inline u64 get_tsc()
 {
+	u64 count;
+	asm volatile("mrs %0, cntvct_el0" : "=r" (count));
+	return count;
+}
+#else
+inline u64 get_tsc()
+{					
 	return __builtin_ia32_rdtsc();
 }
 #endif

@@ -28,6 +28,7 @@
 #include <array>
 #include <functional>
 
+
 enum class jit_class
 {
 	ppu_code,
